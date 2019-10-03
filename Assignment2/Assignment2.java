@@ -6,7 +6,6 @@ public class Assignment2 {
         try {
             thread.join();
         } catch (InterruptedException e) {
-            // TODO Auto - generated catch block
             e.printStackTrace();
         }
     }

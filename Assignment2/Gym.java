@@ -16,6 +16,7 @@ public class Gym implements Runnable {
 
     public static Semaphore[] apparatuses;
     public static Semaphore[] weights;
+    public static Semaphore[] weightMutex;
 
     public void run() {
         // setup the weights
@@ -34,9 +35,10 @@ public class Gym implements Runnable {
         // setup the weight semaphores
         int noOfWeightTypes = WeightPlateSize.values().length;
         weights = new Semaphore[noOfWeightTypes];
+        weightMutex = new Semaphore[noOfWeightTypes];
         for (int i = 0; i < noOfWeightTypes; i++) {
-            System.out.println(noOfWeightPlates.get(WeightPlateSize.values()[i]));
             weights[i] = new Semaphore(noOfWeightPlates.get(WeightPlateSize.values()[i]));
+            weightMutex[i] = new Semaphore(1);
         }
 
         // create and workout clients
@@ -48,7 +50,6 @@ public class Gym implements Runnable {
             id = clients.size();
             client = Client.generateRandom(id);
             clients.add(clients.size());
-            // executor.execute(new Workout(client));
             executor.execute(new Workout(client));
         }
         executor.shutdown();
@@ -71,55 +72,54 @@ public class Gym implements Runnable {
                 currExercise = routine.get(i);
                 currWeight = currExercise.getWeight();
 
-                System.out.println("CLIENT #" + client.getId() + " is now starting " + currExercise.toString());
-
                 // acquire machine
                 try {
                     apparatuses[currExercise.getAt().ordinal()].acquire();
+                    System.out.println("CLIENT #" + client.getId() + " - STARTING " + currExercise.toString());
                 } catch (InterruptedException e2) {
                     e2.printStackTrace();
                 }
-                System.out.println("CLIENT #" + client.getId() + " has acquired " + currExercise.getAt().name());
 
                 // WeightPlateSize.SMALL_3KG
                 no3KG = currWeight.get(WeightPlateSize.SMALL_3KG);
-                for (int j = 0; j < no3KG; j++) {
-                    try {
+                try {
+                    weightMutex[0].acquire();
+                    for (int j = 0; j < no3KG; j++) {
                         weights[0].acquire();
-                    } catch (Exception e) {
-                        System.err.println(e.toString());
                     }
+                } catch (Exception e) {
+                    System.err.println(e.toString());
                 }
-                // System.out.println("CLIENT #" + client.getId() + " has acquired 3KG weights");
+                weightMutex[0].release();;
 
                 // WeightPlateSize.MEDIUM_5KG
                 no5KG = currWeight.get(WeightPlateSize.MEDIUM_5KG);
-                for (int j = 0; j < no5KG; j++) {
-                    try {
-                        weights[1].acquire();
-                    } catch (Exception e) {
-                        System.err.println(e.toString());
+                try{
+                    weightMutex[1].acquire();
+                    for (int j = 0; j < no5KG; j++) {
+                            weights[1].acquire();
                     }
-                }
-                // System.out.println("CLIENT #" + client.getId() + " has acquired 5KG weights");
+                } catch (Exception e) {
+                    System.err.println(e.toString());
+                }        
+                weightMutex[1].release();
 
                 // WeightPlateSize.LARGE_10KG
                 no10KG = currWeight.get(WeightPlateSize.LARGE_10KG);
-                for (int j = 0; j < no10KG; j++) {
-                    try {
-                        weights[2].acquire();
-                    } catch (InterruptedException e) {
-                        System.err.println(e.toString());
+                try {
+                    weightMutex[2].acquire();
+                    for (int j = 0; j < no10KG; j++) {
+                            weights[2].acquire();
                     }
+                } catch (InterruptedException e) {
+                    System.err.println(e.toString());
                 }
-                // System.out.println("CLIENT #" + client.getId() + " has acquired 10KG weights");
+                weightMutex[2].release();
 
-                System.out.println("CLIENT #" + client.getId() + " has acquired weights for " + currExercise.toString());
                 // EXERCISE FOR DURATION
                 try {
                     Thread.sleep(currExercise.getDuration());
                 } catch (InterruptedException e1) {
-                    // TODO Auto-generated catch block
                     e1.printStackTrace();
                 }
 
@@ -137,9 +137,8 @@ public class Gym implements Runnable {
                 for (int j = 0; j < no10KG; j++) {
                     weights[2].release();
                 }
-                System.out.println("CLIENT #" + client.getId() + " has finished " + currExercise.toString());
 
-                System.out.println("CLIENT #" + client.getId() + " is releasing " + currExercise.getAt().name());
+                System.out.println("CLIENT #" + client.getId() + " - FINISHED " + currExercise.toString());
                 apparatuses[currExercise.getAt().ordinal()].release();
             }
         }
