@@ -40,18 +40,23 @@ end,
 
 %% This function should register a new client to this chatroom
 do_register(State, Ref, ClientPID, ClientNick) ->
-    io:format("chatroom:do_register(...): IMPLEMENT ME~n"),
-    State.
+	Registrations = State#chat_st.registrations,
+	NewRegistrations = maps:put(ClientPID, ClientNick, Registrations),
+	ClientPID!{self(), Ref, connect, State#chat_st.history},
+	#chat_st{name = State#chat_st.name,
+		  registrations = NewRegistrations, history = State#chat_st.history}.
 
 %% This function should unregister a client from this chatroom
 do_unregister(State, ClientPID) ->
-    io:format("chatroom:do_unregister(...): IMPLEMENT ME~n"),
-    State.
+	#chat_st{name = State#chat_st.name,
+			registrations = maps:remove(ClientPID, State#chat_st.registrations),
+			history = State#chat_st.history}.
 
 %% This function should update the nickname of specified client.
 do_update_nick(State, ClientPID, NewNick) ->
-    io:format("chatroom:do_update_nick(...): IMPLEMENT ME~n"),
-    State.
+	#chat_st{name = State#chat_st.name,
+		registrations = maps:update(ClientPID, NewNick, State#chat_st.registrations),
+		history = State#chat_st.history}.
 
 %% This function should update all clients in chatroom with new message
 %% (read assignment specs for details)

@@ -80,7 +80,9 @@ loop(State, Request, Ref) ->
 
 	%% GUI requests the nickname of client
 	whoami ->
-	    {{dummy_target, dummy_response}, State};
+		Gui = whereis(list_to_atom(State#cl_st.gui)),
+		Gui!{result, self(), Ref, State#cl_st.nick},
+		{ok_msg_received, State};
 
 	%% GUI requests to update nickname to Nick
 	{nick, Nick} ->
@@ -107,27 +109,73 @@ loop(State, Request, Ref) ->
 
 %% executes `/join` protocol from client perspective
 do_join(State, Ref, ChatName) ->
-    io:format("client:do_join(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	ChatRooms = State#cl_st.con_ch,
+	case maps:is_key(ChatName, ChatRooms) of
+			true ->
+				State#cl_st.gui!{result, self(), Ref, error};
+			false ->
+				Server = whereis(server),
+				Server!{self(), Ref, join, ChatName}
+	end,
+
+	receive
+		{ChatPid, Ref, connect, ChatHistory} ->
+			NewChatRooms = maps:put(ChatName, ChatPid, State#cl_st.con_ch),
+			% io:format(State#cl_st.gui),
+			Gui = whereis(list_to_atom(State#cl_st.gui)),
+			Gui!{result, self(), Ref, ChatHistory}
+	end,
+
+	{ok_msg_received, #cl_st{
+		gui=State#cl_st.gui,
+		nick=State#cl_st.nick,
+		con_ch=NewChatRooms
+	}}.
 
 %% executes `/leave` protocol from client perspective
 do_leave(State, Ref, ChatName) ->
-    io:format("client:do_leave(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	Gui = whereis(list_to_atom(State#cl_st.gui)),
+	Server = whereis(server),
+	case maps:is_key(ChatName, State#cl_st.con_ch) of
+		false ->
+			Gui!{reslt, self(), Ref, err};
+		true ->
+			Server!{self(), Ref, leave, ChatName}
+	end,
+	Gui!{result, self(), Ref, ok},
+	{ok_msg_received, #cl_st{
+		gui=State#cl_st.gui,
+		nick=State#cl_st.nick,
+		con_ch=maps:remove(ChatName, State#cl_st.con_ch)
+	}}.
 
 %% executes `/nick` protocol from client perspective
 do_new_nick(State, Ref, NewNick) ->
+	Gui = whereis(list_to_atom(State#cl_st.gui)),
+	OriginalName = State#cl_st.nick, 
 	if
-		State#cl_st.nick =:= NewNick ->
-			State#cl_st.gui!{result, self(), Ref, err_same};
+		OriginalName =:= NewNick ->
+			UpdateNick = OriginalName,
+			Gui!{result, self(), Ref, err_same};
 		true ->
 			Server = whereis(server),
 			Server!{self(), Ref, nick, NewNick},
 			receive
-				{Server, Ref, Response} ->
-					State#cl_st.gui!{result, self(), make_ref(), Response}
+				{Server, Ref, ok_nick} ->
+					UpdateNick = NewNick,
+					io:format("Sending GUI ok_nick"),
+					Gui!{result, self(), Ref, ok_nick};
+				{Server, Ref, err_nick_used} ->
+					UpdateNick = OriginalName,
+					io:format("Sending GUI err_nick_used"),
+					Gui!{result, self(), Ref, err_nick_used}
 			end
-	end.
+	end,
+	{ok_msg_received, #cl_st{
+		gui=State#cl_st.gui,
+		nick=UpdateNick,
+		con_ch=State#cl_st.con_ch
+	}}.
 
 %% executes send message protocol from client perspective
 do_msg_send(State, Ref, ChatName, Message) ->

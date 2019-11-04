@@ -60,30 +60,67 @@ loop(State) ->
 
 %% executes join protocol from server perspective
 do_join(ChatName, ClientPID, Ref, State) ->
-    io:format("server:do_join(...): IMPLEMENT ME~n"),
-    State.
+	%% If the chatroom does not exist, create it
+	ChatRooms = State#serv_st.chatrooms,
+	Registrations = State#serv_st.registrations,
+	case maps:is_key(ChatName, ChatRooms) of
+		true ->
+			ChatRoomPID = maps:get(ChatName, ChatRooms),
+			NewChatRooms = ChatRooms,
+			NewRegistration = maps:update(ChatName, maps:get(ChatName, Registrations) ++ [ClientPID], Registrations);
+
+		false ->
+			ChatRoomPID = spawn(chatroom, start_chatroom, [ChatName]),
+			NewChatRooms = maps:put(ChatName, ChatRoomPID, ChatRooms),
+			NewRegistration = maps:put(ChatName, [ClientPID], Registrations)
+	end,
+	
+	ClientNick = maps:get(ClientPID, State#serv_st.nicks),
+
+	%% Send register request to chatroom
+	ChatRoomPID!{self(), Ref, register, ClientPID, ClientNick},
+
+	%% return new state
+	#serv_st{
+	 nicks = State#serv_st.nicks, %% nickname map. client_pid => "nickname"
+	 registrations = NewRegistration, %% registration map. "chat_name" => [client_pids]
+	 chatrooms = NewChatRooms %% chatroom map. "chat_name" => chat_pid
+	}.
 
 %% executes leave protocol from server perspective
 do_leave(ChatName, ClientPID, Ref, State) ->
-    io:format("server:do_leave(...): IMPLEMENT ME~n"),
-    State.
+    ChatroomPID = maps:get(ChatName, State#serv_st.chatrooms),
+	Registrations = State#serv_st.registrations,
+	ChatroomClientsPIDs = maps:get(ChatName, State#serv_st.registrations),
+	NewRegistrations = maps:update(ChatName, ChatroomClientsPIDs -- [ClientPID], Registrations),
+	ChatroomPID!{self(), Ref, unregister, ClientPID},
+	ClientPID!{self(), Ref, ack_leave},
+	#serv_st{
+		nicks = State#serv_st.nicks,
+		registrations = NewRegistrations,
+		chatrooms = State#serv_st.chatrooms
+	}.
 
 %% executes new nickname protocol from server perspective
 do_new_nick(State, Ref, ClientPID, NewNick) ->
-    IsUnique = lists:any(fun({_P, N}) -> N = NewNick end, maps:to_list(State#serv_st.nicks)),
-	if
-		IsUnique -> 
-			maps:update(ClientPID, NewNick, State#serv_st.nicks),
-			% UserRooms = maps:filter(fun(CR) -> lists:member(ClientPID, maps:values(CR#chat_st.registrations)) end, State#serv_st.chatrooms),
-			ChatRooms = maps:filter(fun(Name, Clients) -> not lists:member(ClientPID, Clients) end, State#serv_st.registrations),
-			ChatRoomPids = maps:filter(fun(Name, Pid) -> not lists:member(Name, maps:keys(ChatRooms)) end, ChatRooms),
-			maps:map(fun({Name, Pid}) -> 
-				Pid!{self(), Ref, update_nick, ClientPID, NewNick}
-				end, ChatRoomPids),
-			ClientPID!{self(), Ref, ok_nick};
-		true ->
-			ClientPID!{self(), Ref, err_nick_used}
-	end.
+    IsUnique = not lists:member(NewNick, maps:values(State#serv_st.nicks)),
+	case IsUnique of
+		false ->
+			NewNicks = ClientPID!{self(), Ref, err_nick_used};
+		true -> 
+			NewNicks = maps:update(ClientPID, NewNick, State#serv_st.nicks),
+			ChatRooms = maps:filter(fun(_Name, Clients) -> not lists:member(ClientPID, Clients) end, State#serv_st.registrations),
+			ChatRoomPids = maps:filter(fun(Name, _Pid) -> not lists:member(Name, maps:keys(ChatRooms)) end, ChatRooms),
+			maps:map(fun(_Name, Pid) -> 
+							Pid!{self(), Ref, update_nick, ClientPID, NewNick}
+							end, ChatRoomPids),
+			ClientPID!{self(), Ref, ok_nick}
+	end,
+	#serv_st{
+		nicks = NewNicks,
+		registrations = State#serv_st.registrations,
+		chatrooms = State#serv_st.chatrooms
+	}.
 
 %% executes client quit protocol from server perspective
 do_client_quit(State, Ref, ClientPID) ->

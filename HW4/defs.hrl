@@ -2,7 +2,7 @@
 % It contains the following fields:
 %	gui: the name (or Pid) of the GUI process.
 %	nick: nick of the GUI process	
-%	con_ch: channel clients is connected to
+%	con_ch: a map of chatroom names to chatroom pids
 
 -record(cl_st, {gui, nick, con_ch}).
 
@@ -18,6 +18,6 @@
 % It contains the following fields:
 %	name: that chatroom's name
 %	registrations: a map from a client's PID to a client's nickname. The map represents all registered clients
-%       history: chat history since the beginning of that chatroom
+%   history: chat history since the beginning of that chatroom
 
 -record(chat_st, {name, registrations, history}).
