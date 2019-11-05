@@ -179,12 +179,21 @@ do_new_nick(State, Ref, NewNick) ->
 
 %% executes send message protocol from client perspective
 do_msg_send(State, Ref, ChatName, Message) ->
-    io:format("client:do_new_nick(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	io:format("Sending message " ++ Message ++ "\n"),
+	ChatroomPID = maps:get(ChatName, State#cl_st.con_ch),
+	ChatroomPID!{self(), Ref, message, Message},
+	receive
+		{ChatroomPID, Ref, ack_msg} ->
+			Gui = whereis(list_to_atom(State#cl_st.gui)),
+			Gui!{result, self(), Ref, {msg_sent, State#cl_st.nick}}
+	end,
+	io:format("Sent message\n"),
+	{ok_msg_received, State}.
 
 %% executes new incoming message protocol from client perspective
 do_new_incoming_msg(State, _Ref, CliNick, ChatName, Msg) ->
     %% pass message along to gui
+	io:format("Message received\n"),
     gen_server:call(list_to_atom(State#cl_st.gui), {msg_to_GUI, ChatName, CliNick, Msg}),
     {ok_msg_received, State}.
 
