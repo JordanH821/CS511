@@ -67,7 +67,7 @@ do_join(ChatName, ClientPID, Ref, State) ->
 		true ->
 			ChatRoomPID = maps:get(ChatName, ChatRooms),
 			NewChatRooms = ChatRooms,
-			NewRegistration = maps:update(ChatName, maps:get(ChatName, Registrations) ++ [ClientPID], Registrations);
+			NewRegistration = maps:update(ChatName, lists:append([ClientPID], maps:get(ChatName, Registrations)), Registrations);
 
 		false ->
 			ChatRoomPID = spawn(chatroom, start_chatroom, [ChatName]),
@@ -109,11 +109,18 @@ do_new_nick(State, Ref, ClientPID, NewNick) ->
 			NewNicks = ClientPID!{self(), Ref, err_nick_used};
 		true -> 
 			NewNicks = maps:update(ClientPID, NewNick, State#serv_st.nicks),
-			ChatRooms = maps:filter(fun(_Name, Clients) -> not lists:member(ClientPID, Clients) end, State#serv_st.registrations),
-			ChatRoomPids = maps:filter(fun(Name, _Pid) -> not lists:member(Name, maps:keys(ChatRooms)) end, ChatRooms),
+			%	nicks: a map of client pids to their registered nicknames
+			%	registrations: a map of chatroom names to lists containing all client pids registered in that chatroom
+			%	chatrooms: a map of chatroom names to that chatroom's pid
+			Registrations = State#serv_st.registrations,
+			Chatrooms = State#serv_st.chatrooms,
+			ChatroomNames = maps:keys(maps:filter(fun(_ChatName, ClientPIDs) -> not lists:member(ClientPID, ClientPIDs) end, Registrations)),
+			% ChatoomPids = maps:filter(fun(Name, _Pid) -> not lists:member(Name, maps:keys(Chatrooms)) end, Chatrooms),
+			ChatroomPIDs = maps:filter(fun(ChatName, _ChatPID) -> not lists:member(ChatName, ChatroomNames) end, Chatrooms),
 			maps:map(fun(_Name, Pid) -> 
+							% o:format("Updating chatroom: ~p~n", [pid]),
 							Pid!{self(), Ref, update_nick, ClientPID, NewNick}
-							end, ChatRoomPids),
+							end, ChatroomPIDs),
 			ClientPID!{self(), Ref, ok_nick}
 	end,
 	#serv_st{
@@ -124,5 +131,17 @@ do_new_nick(State, Ref, ClientPID, NewNick) ->
 
 %% executes client quit protocol from server perspective
 do_client_quit(State, Ref, ClientPID) ->
-    io:format("server:do_client_quit(...): IMPLEMENT ME~n"),
-    State.
+	Registrations = State#serv_st.registrations,
+	Chatrooms = State#serv_st.chatrooms,
+	ChatroomNames = maps:keys(maps:filter(fun(_ChatName, ClientPIDs) -> not lists:member(ClientPID, ClientPIDs) end, Registrations)),
+	ChatroomPIDs = maps:filter(fun(ChatName, _ChatPID) -> not lists:member(ChatName, ChatroomNames) end, Chatrooms),
+	maps:map(fun(_Name, Pid) -> 
+				Pid!{self(), Ref, unregister, ClientPID}
+				end, ChatroomPIDs),
+	NewRegistrations = maps:map(fun(_ChatName, ClientPIDs) -> lists:delete(ClientPID, ClientPIDs) end, Registrations),
+	ClientPID!{self(), Ref, ack_quit},
+	#serv_st{
+		nicks = State#serv_st.nicks,
+		registrations = NewRegistrations,
+		chatrooms = State#serv_st.chatrooms
+	}.

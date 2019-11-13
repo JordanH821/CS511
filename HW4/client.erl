@@ -158,15 +158,14 @@ do_new_nick(State, Ref, NewNick) ->
 			UpdateNick = OriginalName,
 			Gui!{result, self(), Ref, err_same};
 		true ->
+			UpdateNick = NewNick,
 			Server = whereis(server),
 			Server!{self(), Ref, nick, NewNick},
 			receive
 				{Server, Ref, ok_nick} ->
-					UpdateNick = NewNick,
 					io:format("Sending GUI ok_nick"),
 					Gui!{result, self(), Ref, ok_nick};
 				{Server, Ref, err_nick_used} ->
-					UpdateNick = OriginalName,
 					io:format("Sending GUI err_nick_used"),
 					Gui!{result, self(), Ref, err_nick_used}
 			end
@@ -199,5 +198,11 @@ do_new_incoming_msg(State, _Ref, CliNick, ChatName, Msg) ->
 
 %% executes quit protocol from client perspective
 do_quit(State, Ref) ->
-    io:format("client:do_new_nick(...): IMPLEMENT ME~n"),
-    {{dummy_target, dummy_response}, State}.
+	Server = whereis(server),
+	Server!{self(), Ref, quit},
+	Gui = whereis(list_to_atom(State#cl_st.gui)),
+	receive
+		{Server, Ref, ack_quit} ->
+			Gui!{self(), Ref, ack_quit},
+			exit(shutdown)
+	end.
