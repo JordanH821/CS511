@@ -110,22 +110,22 @@ loop(State, Request, Ref) ->
 %% executes `/join` protocol from client perspective
 do_join(State, Ref, ChatName) ->
 	ChatRooms = State#cl_st.con_ch,
+	Gui = whereis(list_to_atom(State#cl_st.gui)),
 	case maps:is_key(ChatName, ChatRooms) of
 			true ->
-				State#cl_st.gui!{result, self(), Ref, error};
+				io:format("User already in chat: ~s ~n", [ChatName]),
+				Gui!{result, self(), Ref, err},
+				NewChatRooms = State#cl_st.con_ch;
 			false ->
+				io:format("Adding user to chat: ~s ~n", [ChatName]),
 				Server = whereis(server),
-				Server!{self(), Ref, join, ChatName}
+				Server!{self(), Ref, join, ChatName},
+				receive
+					{ChatPid, Ref, connect, ChatHistory} ->
+						NewChatRooms = maps:put(ChatName, ChatPid, State#cl_st.con_ch),
+						Gui!{result, self(), Ref, ChatHistory}
+				end
 	end,
-
-	receive
-		{ChatPid, Ref, connect, ChatHistory} ->
-			NewChatRooms = maps:put(ChatName, ChatPid, State#cl_st.con_ch),
-			% io:format(State#cl_st.gui),
-			Gui = whereis(list_to_atom(State#cl_st.gui)),
-			Gui!{result, self(), Ref, ChatHistory}
-	end,
-
 	{ok_msg_received, #cl_st{
 		gui=State#cl_st.gui,
 		nick=State#cl_st.nick,
@@ -138,7 +138,7 @@ do_leave(State, Ref, ChatName) ->
 	Server = whereis(server),
 	case maps:is_key(ChatName, State#cl_st.con_ch) of
 		false ->
-			Gui!{reslt, self(), Ref, err};
+			Gui!{result, self(), Ref, err};
 		true ->
 			Server!{self(), Ref, leave, ChatName}
 	end,
@@ -158,14 +158,15 @@ do_new_nick(State, Ref, NewNick) ->
 			UpdateNick = OriginalName,
 			Gui!{result, self(), Ref, err_same};
 		true ->
-			UpdateNick = NewNick,
 			Server = whereis(server),
 			Server!{self(), Ref, nick, NewNick},
 			receive
 				{Server, Ref, ok_nick} ->
+					UpdateNick = NewNick,
 					io:format("Sending GUI ok_nick"),
 					Gui!{result, self(), Ref, ok_nick};
 				{Server, Ref, err_nick_used} ->
+					UpdateNick = OriginalName,
 					io:format("Sending GUI err_nick_used"),
 					Gui!{result, self(), Ref, err_nick_used}
 			end
@@ -204,5 +205,5 @@ do_quit(State, Ref) ->
 	receive
 		{Server, Ref, ack_quit} ->
 			Gui!{self(), Ref, ack_quit},
-			exit(shutdown)
+			{shutdown, State}
 	end.

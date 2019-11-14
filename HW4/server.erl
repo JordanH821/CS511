@@ -106,7 +106,8 @@ do_new_nick(State, Ref, ClientPID, NewNick) ->
     IsUnique = not lists:member(NewNick, maps:values(State#serv_st.nicks)),
 	case IsUnique of
 		false ->
-			NewNicks = ClientPID!{self(), Ref, err_nick_used};
+			ClientPID!{self(), Ref, err_nick_used},
+			NewNicks = State#serv_st.nicks;
 		true -> 
 			NewNicks = maps:update(ClientPID, NewNick, State#serv_st.nicks),
 			%	nicks: a map of client pids to their registered nicknames
@@ -131,6 +132,7 @@ do_new_nick(State, Ref, ClientPID, NewNick) ->
 
 %% executes client quit protocol from server perspective
 do_client_quit(State, Ref, ClientPID) ->
+	io:format("Client ~p is exiting~n", [ClientPID]),
 	Registrations = State#serv_st.registrations,
 	Chatrooms = State#serv_st.chatrooms,
 	ChatroomNames = maps:keys(maps:filter(fun(_ChatName, ClientPIDs) -> not lists:member(ClientPID, ClientPIDs) end, Registrations)),
@@ -140,8 +142,11 @@ do_client_quit(State, Ref, ClientPID) ->
 				end, ChatroomPIDs),
 	NewRegistrations = maps:map(fun(_ChatName, ClientPIDs) -> lists:delete(ClientPID, ClientPIDs) end, Registrations),
 	ClientPID!{self(), Ref, ack_quit},
+	maps:map(fun(K, V) -> io:format(K ++ " ~w~n", [length(V)]) end, Registrations),
+	maps:map(fun(K, V) -> io:format(K ++ " ~w~n", [length(V)]) end, NewRegistrations),
+	% io:format("OldRegistrants: ~w, NewRegistrants: ~w~n", []),
 	#serv_st{
-		nicks = State#serv_st.nicks,
+		nicks = maps:remove(ClientPID, State#serv_st.nicks),
 		registrations = NewRegistrations,
 		chatrooms = State#serv_st.chatrooms
 	}.
